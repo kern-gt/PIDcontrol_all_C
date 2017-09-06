@@ -1,12 +1,11 @@
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 PID制御ヘッダ　ver2.xx
-pid_control2_f.h
+pid_control_all.h
 
 機能：パラメータ設定/読出し、偏差PID,微分先行形P-ID、比例微分先行形I-PD
 	全てfloat型変数を使用
 
 作成日：2015/08
-最終更新日：2016/8/22
 
 作成者：Goto Shunichi
 
@@ -14,8 +13,8 @@ pid_control2_f.h
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
 
-#ifndef _PID_CONTROL_F_H_
-#define _PID_CONTROL_F_H_
+#ifndef _GTS02_PID_CONTROL_F_H_
+#define _GTS02_PID_CONTROL_F_H_
 
 /**------------------------------------------------------------------------------
 <<外部公開マクロ定義>>
@@ -144,4 +143,4 @@ float Velocitytype_i_pd(PID_STATE_t *pid_state_p,	//PIDパラメータ
 								float inputval);	//制御入力
 
 
-#endif //_PID_CONTROL_F_H_
+#endif //_GTS02_PID_CONTROL_F_H_

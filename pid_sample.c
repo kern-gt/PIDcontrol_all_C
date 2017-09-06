@@ -18,7 +18,7 @@ pid_sample.c
 -----------------------------------------------------------------------*/
 
 #include <stdio.h>
-#include "pid_control2_f.h"
+#include "pid_control_all_f.h"
 
 #define STEP		(10*60*2)	//繰り返し数（総サンプリング数）
 #define SETVAL		(50.0)		//目標値
