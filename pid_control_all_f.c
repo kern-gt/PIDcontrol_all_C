@@ -1,18 +1,15 @@
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 PID制御モジュール　ver2.xx
-pid_control2_f.c
+pid_control_all.c
 
-機能：パラメータ設定/読出し、偏差PID,微分先行形P-ID、比例微分先行形I-PD
+機能：パラメータ設定/取得、偏差PID,微分先行形P-ID、比例微分先行形I-PD
 	全てfloat型変数を使用
 
 作成日：2015/08
-最終更新日：2016/8/22
 
 作成者：Goto Shunichi
 
 備考：float型専用
-
-
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
 
 /*************************************************************************************
@@ -21,16 +18,17 @@ pid_control2_f.c
 		　　速度型に変換すること。特に不完全微分は完全に間違っている。
 		　　なおこのコードは修正済みのを使用している。
 
-	仕様について
+	PID制御の詳細について
 	 「実用微分 (=不完全微分)」を使用:微分器前段に１次遅れフィルタを設置し、微分項出力の性能を上げている。
 	アルゴリズムは以下の3種対応する。
 
-	:実用偏差速度形PID
-	:実用測定値微分先行速度形PI-D
-	:実用測定値比例微分先行速度形I-PD
-	 (実用：実用微分)
+	:速度形PID
+	:微分先行速度形PI-D
+	:比例微分先行速度形I-PD
 
-	を実装し、かつ値制限における基本原則を遵守している。
+	を実装している。
+
+	またリセットワインドアップ制御の実装は以下の値制限における基本原則に基づいている。
 
 	基本原則１：P動作とD動作の速度形信号は絶対に制限したり、切り捨てたりしてはならない。
 	基本原則２：I動作の速度形信号は制限オーバー量を増大させる方向のときには制限または
@@ -49,7 +47,7 @@ pid_control2_f.c
 	がある。（ステップ応答法の変形に速度応答法があるがここでは触れない。）
 	ステップ応答法が良く用いられるため、表を載せておく。
 
-		ステップ応答法によるPIDパラメータの最適調整法
+		ステップ応答法によるPID制御構造体の最適調整法
 		T:制御対象の等価時定数	K:等価ゲイン　L:等価むだ時間
 	
 		制御動作	比例ゲインKp	積分時間Ti	微分時間Td	評価指標（目標とする応答）
@@ -61,7 +59,7 @@ pid_control2_f.c
 	等価時定数Tに比べ、等価むだ時間Lが小さい領域(L/T=0.125~1)で適用が可能。
 	外乱抑制特性と目標値追従特性のどちらかを最適するものに分けることができる。
 	さらに応答を行き過ぎなしと行き過ぎ(=オーバーシュート)20％に分けた4通りの場合の
-	最適PIDパラメータに設定が可能である。行き過ぎの場合は早く収束する。
+	最適PID制御構造体に設定が可能である。行き過ぎの場合は早く収束する。
 
 		CHR法
 		ゲインの決定法に外乱抑制最適化と目標値追従最適化の2種がある。
@@ -97,65 +95,109 @@ pid_control2_f.c
 
 **************************************************************************/
 
-#include "pid_control2_f.h"
+#include "pid_control_all_f.h"
 
+/**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+＊　関数名　：InitPid
+＊　機能　　：PID制御構造体初期化
+＊　引数　　：*pid_state_p=PID制御構造体, dt=制御周期[s]
+＊　戻り値　：
+＊　備考　　：
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
+void InitPid(PIDParameter_t *pid_state_p)
+{
+	(*pid_state_p).pgain = 1.0;
+	(*pid_state_p).ti    = 0.1; 
+	(*pid_state_p).td    = 0.1;
+	(*pid_state_p).dff   = 0.1;
+	(*pid_state_p).dt    = 1.0;
+
+	(*pid_state_p).outmax =  100.0;
+	(*pid_state_p).outmin = -100.0;
+	(*pid_state_p).delta_outmax =  1.0;
+	(*pid_state_p).delta_outmin = -1.0;
+
+	(*pid_state_p).error[0] = 0.0;
+	(*pid_state_p).error[1] = 0.0;
+	(*pid_state_p).error[2] = 0.0;
+
+	(*pid_state_p).inputbuf[0] = 0.0;
+	(*pid_state_p).inputbuf[1] = 0.0;
+	(*pid_state_p).inputbuf[2] = 0.0;
+
+	(*pid_state_p).velocity_d = 0.0;
+
+	(*pid_state_p).pidout[0] = 0.0;
+	(*pid_state_p).pidout[1] = 0.0;
+	(*pid_state_p).pidout[2] = 0.0;
+
+	(*pid_state_p).limited_pidout[0] = 0.0;
+	(*pid_state_p).limited_pidout[1] = 0.0;
+
+	(*pid_state_p).switch_i_flag = 0.0;
+}
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：制御周期設定関数
-引数　　　：*pid_state_p=PIDパラメータ, dt=制御周期[s]
-戻り値　　：
-History：
+＊　関数名　：SetPidDt
+＊　機能　　：制御周期設定関数
+＊　引数　　：*pid_state_p=PID制御構造体, dt=制御周期[s]
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Set_pid_dt(PID_STATE_t *pid_state_p, float dt)
+void SetPidDt(PIDParameter_t *pid_state_p, float dt)
 {
 	(*pid_state_p).dt = dt;
 }
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：制御周期読出し関数
-引数　　　：*pid_state_p=PIDパラメータ, :dt=制御周期
-戻り値　　：
-History：
+＊　関数名　：GetPidDt
+＊　機能　　：制御周期取得関数
+＊　引数　　：*pid_state_p=PID制御構造体, :dt=制御周期
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Read_pid_dt(PID_STATE_t *pid_state_p, float *dt)
+void GetPidDt(PIDParameter_t *pid_state_p, float *dt)
 {
 	*dt = (*pid_state_p).dt;
 }
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：微分係数設定関数
-引数　　　：*pid_state_p=PIDパラメータ, dff=微分係数(0.1~0.125)
-戻り値　　：
-History：
+＊　関数名　：SetPidDff
+＊　機能　　：微分係数設定関数
+＊　引数　　：*pid_state_p=PID制御構造体, dff=微分係数(0.1~0.125)
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Set_pid_dff(PID_STATE_t *pid_state_p, float dff)
+void SetPidDff(PIDParameter_t *pid_state_p, float dff)
 {
 	(*pid_state_p).dff = dff;
 }
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：微分係数読出し関数
-引数　　　：*pid_state_p=PIDパラメータ, *dff=微分係数 
-戻り値　　：
-History：
+＊　関数名　：GetPidDff
+＊　機能　　：微分係数取得関数
+＊　引数　　：*pid_state_p=PID制御構造体, *dff=微分係数
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Read_pid_dff(PID_STATE_t *pid_state_p, float *dff)
+void GetPidDff(PIDParameter_t *pid_state_p, float *dff)
 {
 	*dff = ((*pid_state_p).dff);
 }
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：PIDゲイン設定関数
-引数　　　：*pid_state_p=PIDパラメータ, pgain=比例ゲイン, ti=積分時間, td=微分時間
-戻り値　　：
-History：
+＊　関数名　：SetPidGain
+＊　機能　　：PIDゲイン設定関数
+＊　引数　　：*pid_state_p=PID制御構造体, pgain=比例ゲイン, ti=積分時間, td=微分時間
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Set_pid_gain(PID_STATE_t *pid_state_p, float pgain, float ti, float td)
+void SetPidGain(PIDParameter_t *pid_state_p, float pgain, float ti, float td)
 {
 	(*pid_state_p).pgain = pgain;
 	(*pid_state_p).ti 	 = ti;
@@ -164,13 +206,14 @@ void Set_pid_gain(PID_STATE_t *pid_state_p, float pgain, float ti, float td)
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：PIDゲイン読出し関数
-引数　　　：*pid_state_p=PIDパラメータ, *pgain=比例ゲイン, *ti=積分時間,
-		*td=微分時間
-戻り値　　：
-History：
+＊　関数名　：GetPidGain
+＊　機能　　：PIDゲイン取得関数
+＊　引数　　：*pid_state_p=PID制御構造体, *pgain=比例ゲイン, *ti=積分時間,
+　　　　　　　　*td=微分時間
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Read_pid_gain( PID_STATE_t  *pid_state_p, float *pgain, float *ti,	float *td)
+void GetPidGain( PIDParameter_t  *pid_state_p, float *pgain, float *ti,	float *td)
 {
 	*pgain = (*pid_state_p).pgain;
 	*ti    = (*pid_state_p).ti;
@@ -179,12 +222,13 @@ void Read_pid_gain( PID_STATE_t  *pid_state_p, float *pgain, float *ti,	float *t
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：操作量限界値設定関数
-引数　　　：*pid_state_p=PIDパラメータ, outmax=操作量上限値, outmin=操作量下限値
-戻り値　　：
-History：
+＊　関数名　：SetPidOutlim
+＊　機能　　：操作量限界値設定関数
+＊　引数　　：*pid_state_p=PID制御構造体, outmax=操作量上限値, outmin=操作量下限値
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Set_pid_outlim(PID_STATE_t *pid_state_p, float outmax, float outmin)
+void SetPidOutlim(PIDParameter_t *pid_state_p, float outmax, float outmin)
 {
 	(*pid_state_p).outmax = outmax;
 	(*pid_state_p).outmin = outmin;
@@ -192,12 +236,13 @@ void Set_pid_outlim(PID_STATE_t *pid_state_p, float outmax, float outmin)
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：操作量限界値読出し関数
-引数　　　：*pid_state_p=PIDパラメータ, *outmax=操作量最大値, *outmin=操作量最小値
-戻り値　　：
-History：
+＊　関数名　：GetPidOutlim
+＊　機能　　：操作量限界値取得関数
+＊　引数　　：*pid_state_p=PID制御構造体, *outmax=操作量最大値, *outmin=操作量最小値
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Read_pid_outlim(PID_STATE_t *pid_state_p, float *outmax, float *outmin)
+void GetPidOutlim(PIDParameter_t *pid_state_p, float *outmax, float *outmin)
 {
 	*outmax = (*pid_state_p).outmax;
 	*outmin = (*pid_state_p).outmin;
@@ -205,13 +250,14 @@ void Read_pid_outlim(PID_STATE_t *pid_state_p, float *outmax, float *outmin)
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：操作変化量限界値設定関数
-引数　　　：*pid_state_p=PIDパラメータ, delta_outmax=操作増加量限界値,
-		delta_outmin=操作減少量限界値
-戻り値　　：
-History：
+＊　関数名　：
+＊　機能　　：操作変化量限界値設定関数
+＊　引数　　：*pid_state_p=PID制御構造体, delta_outmax=操作増加量限界値,
+　　　　　　　　delta_outmin=操作減少量限界値
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Set_pid_deltaoutlim(PID_STATE_t *pid_state_p, float delta_outmax, float delta_outmin)
+void SetPidDeltaoutlim(PIDParameter_t *pid_state_p, float delta_outmax, float delta_outmin)
 {
 	(*pid_state_p).delta_outmax = delta_outmax;
 	(*pid_state_p).delta_outmin = delta_outmin;
@@ -219,35 +265,35 @@ void Set_pid_deltaoutlim(PID_STATE_t *pid_state_p, float delta_outmax, float del
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：操作変化量限界値読出し関数
-引数　　　：*pid_state_p=PIDパラメータ, *delta_outmax=操作変化量限界値,
-		*delta_outmin=操作変化量最小値
-戻り値　　：
-History：
+＊　関数名　：GetPidDeltaoutlim
+＊　機能　　：操作変化量限界値取得関数
+＊　引数　　：*pid_state_p=PID制御構造体, *delta_outmax=操作変化量限界値,
+　　　　　　　　*delta_outmin=操作変化量最小値
+＊　戻り値　：
+＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-void Read_pid_deltaoutlim(PID_STATE_t *pid_state_p,	float *delta_outmax,　float *delta_outmin)
+void GetPidDeltaoutlim(PIDParameter_t *pid_state_p,	float *delta_outmax,　float *delta_outmin)
 {
 	*delta_outmax = (*pid_state_p).delta_outmax;
 	*delta_outmin = (*pid_state_p).delta_outmin;
 }
 
 
-
-
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：実用偏差速度形ディジタルPID
-引数　　　：*pid_state_p=PIDパラメータ, setval=目標値, inputval=フィードバック信号入力
-戻り値　　：操作量
-History：
+＊　関数名　：VResPID
+＊　機能　　：PID制御
+＊　引数　　：*pid_state_p=PID制御構造体, setvalue=目標値, feedback_value=フィードバック信号入力
+＊　戻り値　：操作量
+＊　備考　　：速度型アルゴリズム＋不完全微分＋リセットワインドアップ制御
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-float Velocitytype_pid(PID_STATE_t *pid_state_p, float setval, float inputval)
+float VResPID(PIDParameter_t *pid_state_p, float setvalue, float feedback_value)
 {
 	float velocity_p = 0.0;							//速度P項出力
 	float velocity_i = 0.0;							//速度I項出力
 	float velocity_pid = 0.0;						//速度PID項出力
 
 	//偏差
-	(*pid_state_p).error[0] = setval - inputval;
+	(*pid_state_p).error[0] = setvalue - feedback_value;
 
 	//速度比例演算
 	velocity_p = (*pid_state_p).error[0] - (*pid_state_p).error[1];
@@ -257,7 +303,8 @@ float Velocitytype_pid(PID_STATE_t *pid_state_p, float setval, float inputval)
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * ((*pid_state_p).error[0] - 2*(*pid_state_p).error[1] +(*pid_state_p).error[2]))
-					+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+		+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//偏差をバッファに保存
@@ -310,22 +357,23 @@ float Velocitytype_pid(PID_STATE_t *pid_state_p, float setval, float inputval)
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：実用微分先行速度形ディジタルPID(P-ID)
-引数　　　：*pid_state_p=PIDパラメータ, setval=目標値, inputval=フィードバック信号入力
-戻り値　　：操作量
-History：
+＊　関数名　：VResPI_D
+＊　機能　　：微分先行形PID制御(PI-D)
+＊　引数　　：*pid_state_p=PID制御構造体, setvalue=目標値, feedback_value=フィードバック信号入力
+＊　戻り値　：操作量
+＊　備考　　：速度型アルゴリズム＋不完全微分＋リセットワインドアップ制御
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-float Velocitytype_p_id(PID_STATE_t *pid_state_p,　float setval,	float inputval)
+float VResPI_D(PIDParameter_t *pid_state_p,　float setvalue,	float feedback_value)
 {
 	float velocity_p　　　= 0.0;		//速度P項出力
 	float velocity_i　　　= 0.0;		//速度I項出力
 	float velocity_pid　= 0.0;		//速度PID項出力
 
 	//入力バッファ
-	(*pid_state_p).inputbuf[0] = inputval;
+	(*pid_state_p).inputbuf[0] = feedback_value;
 
 	//偏差
-	(*pid_state_p).error[0] = setval - inputval;
+	(*pid_state_p).error[0] = setvalue - feedback_value;
 
 	//速度比例演算
 	velocity_p = (*pid_state_p).error[0] - (*pid_state_p).error[1];
@@ -335,7 +383,8 @@ float Velocitytype_p_id(PID_STATE_t *pid_state_p,　float setval,	float inputval
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * (2*(*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0] - (*pid_state_p).inputbuf[2])) 
-								+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+		+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//偏差・入力をバッファに保存
@@ -390,22 +439,23 @@ float Velocitytype_p_id(PID_STATE_t *pid_state_p,　float setval,	float inputval
 
 
 /**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-機能説明：実用比例微分先行速度形ディジタルPID(I-PD)
-引数　　　：*pid_state_p=PIDパラメータ,  setval=目標値, inputval=フィードバック信号入力
-戻り値　　：操作量
-History：
+＊　関数名　：VResI_PD
+＊　機能　　：比例微分先行形PID制御(I-PD)
+＊　引数　　：*pid_state_p=PID制御構造体,  setvalue=目標値, feedback_value=フィードバック信号入力
+＊　戻り値　：操作量
+＊　備考　　：速度型アルゴリズム＋不完全微分＋リセットワインドアップ制御
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-float Velocitytype_i_pd(PID_STATE_t *pid_state_p,　float setval,	float inputval)
+float VResI_PD(PIDParameter_t *pid_state_p,　float setvalue,	float feedback_value)
 {
 	float velocity_p = 0.0;							//速度P項出力
 	float velocity_i = 0.0;							//速度I項出力
 	float velocity_pid = 0.0;						//速度PID項出力
 
 	//入力バッファ
-	(*pid_state_p).inputbuf[0] = inputval;
+	(*pid_state_p).inputbuf[0] = feedback_value;
 
 	//偏差
-	(*pid_state_p).error[0] = setval - inputval;
+	(*pid_state_p).error[0] = setvalue - feedback_value;
 
 	//速度比例演算
 	velocity_p = (*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0];
@@ -415,7 +465,8 @@ float Velocitytype_i_pd(PID_STATE_t *pid_state_p,　float setval,	float inputval
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * (2*(*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0] - (*pid_state_p).inputbuf[2])) 
-								+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+	+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//入力をバッファに保存
