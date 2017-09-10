@@ -10,8 +10,6 @@ pid_control_all.c
 作成者：Goto Shunichi
 
 備考：float型専用
-
-
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
 
 /*************************************************************************************
@@ -20,16 +18,17 @@ pid_control_all.c
 		　　速度型に変換すること。特に不完全微分は完全に間違っている。
 		　　なおこのコードは修正済みのを使用している。
 
-	仕様について
+	PID制御の詳細について
 	 「実用微分 (=不完全微分)」を使用:微分器前段に１次遅れフィルタを設置し、微分項出力の性能を上げている。
 	アルゴリズムは以下の3種対応する。
 
-	:実用偏差速度形PID
-	:実用測定値微分先行速度形PI-D
-	:実用測定値比例微分先行速度形I-PD
-	 (実用：実用微分)
+	:速度形PID
+	:微分先行速度形PI-D
+	:比例微分先行速度形I-PD
 
-	を実装し、かつ値制限における基本原則を遵守している。
+	を実装している。
+
+	またリセットワインドアップ制御の実装は以下の値制限における基本原則に基づいている。
 
 	基本原則１：P動作とD動作の速度形信号は絶対に制限したり、切り捨てたりしてはならない。
 	基本原則２：I動作の速度形信号は制限オーバー量を増大させる方向のときには制限または
@@ -467,7 +466,7 @@ float VResI_PD(PIDParameter_t *pid_state_p,　float setvalue,	float feedback_val
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * (2*(*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0] - (*pid_state_p).inputbuf[2])) 
 	+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
-	
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//入力をバッファに保存
