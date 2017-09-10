@@ -21,11 +21,13 @@ pid_sample2.c
 #include <stdlib.h>
 #include "pid_control_all_f.h"  //PIDライブラリをインクルード
 
-//モータトルク設定値
-#define R_MOTOR_SET_TORQUE		(0.01)		//右モータトルク目標値[N*m]
-#define L_MOTOR_SET_TORQUE		(0.03)		//左モータトルク目標値[N*m]
+//サンプリング数[s/dt]
+#define SAMPLE_NUM (10 / DT)
 
-//設定パラメータ
+//モータトルク設定値
+#define SET_VALUE		(50.0)		//目標値
+
+//PID設定パラメータ
 #define PGAIN 		(1.0)		//比例ゲイン
 #define TI			(1.0)		//積分時間(0.0禁止)
 #define TD			(1.0)		//微分時間
@@ -34,111 +36,128 @@ pid_sample2.c
 
 #define DFF			(0.1)		//不完全微分の微分係数(0.1~0.125)
 
-#define OUTMAX		(100.0)		//PID操作量最大値(今回はPWM値とする[%])
-#define OUTMIN		(-100.0)	//PID操作量最小値(今回はPWM値とする[%])
-#define DELTA_OUTMAX (5.0)		//PID操作変化量最大値(今回はPWM変化率[%/dt])
-#define DELTA_OUTMIN (-5.0)		//PID操作変化量最小値(今回はPWM変化率[%/dt])
+#define OUTMAX		(100.0)		//PID操作量最大値
+#define OUTMIN		(-100.0)	//PID操作量最小値
+#define DELTA_OUTMAX (5.0)		//PID操作変化量最大値
+#define DELTA_OUTMIN (-5.0)		//PID操作変化量最小値
+
+#define TAU			(30.0)		//１次遅れフィルタ等価時定数
+#define RK4_GAIN	(1.0)		//１次遅れフィルタゲイン
+
+#define PURE_DELAY	(4.0)		//等価むだ時間[s]
 
 
 //PID制御構造体を定義
-PIDParameter_t r_torque_pid;    //右モータトルク
-PIDParameter_t l_torque_pid;    //左モータトルク
+PIDParameter_t pid_struct;    //PID制御構造体
 
-//周期タイマ実行フラグ(割込みハンドラから操作)
-volatile int timer_flag = false;
+//むだ時間バッファ
+float delay_fifo[(1024 * 100)];
 
 
-float GetRightTorqueSensor(void){
-	/*
-	右トルクセンサからのトルク値を取得します。
-	トルク値は具体的には[N*m]などを想定しています。
-	電流センサの場合は必要ならばフィルタを掛けてから
-	トルク定数などを乗じてトルクに変換します。
-	*/
-	return(0.0);
+//むだ時間バッファ(リングバッファ方式のFIFO)
+float DelayTime(float *buf,float input,float puredelay,float dt)
+{
+	float output = 0.0,bufsize = 0.0;
+	static int inputpoint = 0, outputpoint = 1;
+
+	if(dt >= 1.0)
+	{
+		bufsize = puredelay * dt;
+	}else{
+		if(dt > 0.0)
+		{
+			bufsize = puredelay / dt;
+		}
+		if(dt == 0.0)
+		{
+			return (input);
+		}
+	}
+
+	output = buf[outputpoint++];
+	buf[inputpoint++] = input;
+
+	if(bufsize <= outputpoint)
+	{
+		outputpoint = 0;
+	}
+	if(bufsize <= inputpoint)
+	{
+		inputpoint = 0;
+	}
+
+	return(output);
 }
 
-float GetLeftTorqueSensor(void){
-	/*
-	左トルクセンサからのトルク値を取得します。
-	トルク値は具体的には[N*m]などを想定しています。
-	電流センサの場合は必要ならばフィルタを掛けてから
-	トルク定数などを乗じてトルクに変換します。
-	*/
-	return(0.0);
+//1次遅れフィルタ（４次ルンゲクッタ法）
+float Rk4(float indata, float tau, float dt,float gain)
+{
+	float k1 = 0.0, k2 = 0.0, k3 = 0.0, k4 = 0.0;
+	static float outdata = 0.0;
+
+	k1 = dt * (indata - outdata) /tau;
+	k2 = dt * (indata - (outdata + k1 / 2.0)) / tau;
+	k3 = dt * (indata - (outdata + k2 / 2.0)) / tau;
+	k4 = dt * (indata - (outdata + k3)) / tau;
+
+	outdata = outdata + gain * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0;
+
+	return (outdata);
 }
 
-void SetRightMotorTorque(float output_r_pwm){
-	/*
-	右モータの印加電圧を設定します。
-	今回の例では引数はPWM値（100.0~-100.0%）を
-	想定しています。
-	*/
+//制御対象シミュレーション
+float Plant(float control_value){
+	float delay_value = 0.0;
+
+	//むだ時間シミュレーション
+	delay_value = DelayTime(delay_fifo, control_value, PURE_DELAY, DT);
+	//1次遅れシミュレーション
+	return(Rk4(delay_value, TAU, DT,RK4_GAIN));
 }
 
-void SetLeftMotorTorque(float output_l_pwm){
-	/*
-	左モータの印加電圧を設定します。
-	今回の例では引数はPWM値（100.0~-100.0%）を
-	想定しています。
-	*/
+//グラフ描画初期化
+void InitGraph(void){
+	
 }
 
-void TimerHandler(void){
-	//制御周期DTの周期割込みハンドラを想定します。
-	timer_flag = true;
+//グラフ描画
+void DrawGraph(&pid_struct, set_value, feedback_value,control_value){
+
 }
 
 
 int main(void) {
 
-	//目標値(モータのトルク値)
-	float set_r_torque = R_MOTOR_SET_TORQUE;
-	float set_l_torque = L_MOTOR_SET_TORQUE;
+	//目標値
+	float set_value = SET_VALUE;
 
-	//フィードバック値(トルクセンサなど)
-	float feedback_r_torque = 0.0;
-	float feedback_l_torque = 0.0;
+	//フィードバック値
+	static float feedback_value = 0.0;
 
-	//制御量（モータ印加電圧値、PWM値）
-	float output_r_pwm = 0.0;
-	float output_l_pwm = 0.0;
+	//制御量
+	float control_value = 0.0;
 
 
 	//PID制御構造体初期化
-	InitPid(&r_torque_pid);
-	InitPid(&l_torque_pid);
+	InitPid(&pid_struct);
 
 	//PIDパラメータ設定(右モータ)
-	SetPidGain(&r_torque_pid, PGAIN, TI, TD);
-	SetPidDt(&r_torque_pid, DT);
-	SetPidDff(&r_torque_pid, DFF);
-	SetPidOutlim(&r_torque_pid, OUTMAX, OUTMIN);
-	SetPidDeltaoutlim(&r_torque_pid, DELTA_OUTMAX, DELTA_OUTMIN);
+	SetPidGain(&pid_struct, PGAIN, TI, TD);
+	SetPidDt(&pid_struct, DT);
+	SetPidDff(&pid_struct, DFF);
+	SetPidOutlim(&pid_struct, OUTMAX, OUTMIN);
+	SetPidDeltaoutlim(&pid_struct, DELTA_OUTMAX, DELTA_OUTMIN);
 
-	//PIDパラメータ設定(左モータ)
-	SetPidGain(&l_torque_pid, PGAIN, TI, TD);
-	SetPidDt(&l_torque_pid, DT);
-	SetPidDff(&l_torque_pid, DFF);
-	SetPidOutlim(&l_torque_pid, OUTMAX, OUTMIN);
-	SetPidDeltaoutlim(&l_torque_pid, DELTA_OUTMAX, DELTA_OUTMIN);
+	for(i=1;i >= SAMPLE_NUM;i++){
 
-	while(1){
-		if(timer_flag == true){
-			timer_flag = false;
+		//PID制御演算
+		control_value = VResPID(&pid_struct, set_value, feedback_value);
+		
+		//制御対象シミュレーション
+		feedback_value = Plant(control_value);
 
-			//フィードバック値(トルク値)を取得
-			feedback_r_torque = GetRightTorqueSensor();
-			feedback_l_torque = GetLeftTorqueSensor();
-
-			//PID制御演算
-			output_r_pwm = VResPID(&r_torque_pid, set_r_torque, feedback_r_torque);
-			output_l_pwm = VResPID(&l_torque_pid, set_l_torque, feedback_l_torque);
-			
-			//モータ印加電圧（PWM）を設定
-			SetRightMotorTorque(output_r_pwm);
-			SetLeftMotorTorque(output_l_pwm);
-		}
+		//グラフ描画
+		DrawGraph(&pid_struct, set_value, feedback_value,control_value);
 	}	
 	return (0);
 }
