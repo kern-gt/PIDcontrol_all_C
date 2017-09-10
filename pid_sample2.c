@@ -3,6 +3,12 @@ PID制御サンプルコード２
 pid_sample2.c
 
 機能：PID制御のテンプレート
+	今回は例としてロボットの左右車輪のモータトルクの制御とします。
+	処理の流れは
+		トルクセンサからの値を取得
+		PID制御演算
+		モータの印加電圧（PWM）を設定
+	これを制御周期毎に実行する形になります。
 
 作成日：2017/9/10
 
@@ -13,77 +19,124 @@ pid_sample2.c
 -----------------------------------------------------------------------*/
 #include "pid_control_all_f.h"  //PIDライブラリをインクルード
 
+//モータトルク設定値
+#define R_MOTOR_SET_TORQUE		(0.01)		//右モータトルク目標値[N*m]
+#define L_MOTOR_SET_TORQUE		(0.03)		//左モータトルク目標値[N*m]
 
-#define SETVAL		(50.0)		//目標値
+//設定パラメータ
+#define PGAIN 		(1.0)		//比例ゲイン
+#define TI			(1.0)		//積分時間(0.0禁止)
+#define TD			(1.0)		//微分時間
 
-//PIDゲイン
-#define PGAIN 		(8.0)		//比例ゲイン
-#define TI			(8.0)		//積分時間(0.0禁止)
-#define TD			(2.0)		//微分時間
+#define DT			(0.01)		//制御周期dt[s]
 
-#define DT			(0.1)		//制御周期[s]
-#define DFF			(0.1)		//微分係数(0.1~0.125)
+#define DFF			(0.1)		//不完全微分の微分係数(0.1~0.125)
 
-#define OUTMAX		(100.0)		//PID操作量最大値
-#define OUTMIN		(-100.0)	//PID操作量最小値
-#define DELTA_OUTMAX (10.0)		//PID操作変化量最大値
-#define DELTA_OUTMIN (-10.0)	//PID操作変化量最小値
+#define OUTMAX		(100.0)		//PID操作量最大値(今回はPWM値とする[%])
+#define OUTMIN		(-100.0)	//PID操作量最小値(今回はPWM値とする[%])
+#define DELTA_OUTMAX (5.0)		//PID操作変化量最大値(今回はPWM変化率[%/dt])
+#define DELTA_OUTMIN (-5.0)		//PID操作変化量最小値(今回はPWM変化率[%/dt])
 
 
 //PID制御構造体を定義
-PID_STATE_t pid_samples;
+PIDParameter_t r_torque_pid;    //右モータトルク
+PIDParameter_t l_torque_pid;    //左モータトルク
 
 //周期タイマ実行フラグ(割込みハンドラから操作)
 volatile int timer_flag = false;
 
 
-//プロトタイプ宣言
-float GetSensorValue(void);
-void  SetActuatorValue(float output_value);
+float GetRightTorqueSensor(void){
+	/*
+	右トルクセンサからのトルク値を取得します。
+	トルク値は具体的には[N*m]などを想定しています。
+	電流センサの場合は必要ならばフィルタを掛けてから
+	トルク定数などを乗じてトルクに変換します。
+	*/
+	return(0.0);
+}
+
+float GetLeftTorqueSensor(void){
+	/*
+	左トルクセンサからのトルク値を取得します。
+	トルク値は具体的には[N*m]などを想定しています。
+	電流センサの場合は必要ならばフィルタを掛けてから
+	トルク定数などを乗じてトルクに変換します。
+	*/
+	return(0.0);
+}
+
+void SetRightMotorTorque(float output_r_pwm){
+	/*
+	右モータの印加電圧を設定します。
+	今回の例では引数はPWM値（100.0~-100.0%）を
+	想定しています。
+	*/
+}
+
+void SetLeftMotorTorque(float output_l_pwm){
+	/*
+	左モータの印加電圧を設定します。
+	今回の例では引数はPWM値（100.0~-100.0%）を
+	想定しています。
+	*/
+}
+
+void TimerHandler(void){
+	//制御周期DTの周期割込みハンドラを想定します。
+	timer_flag = true;
+}
 
 
 int main(void) {
 
-	float set_value = SETVAL;   //目標値
-	float feedback_value = 0.0; //フィードバック値
-	float output_value = 0.0;   //制御量
+	//目標値(モータのトルク値)
+	float set_r_torque = R_MOTOR_SET_TORQUE;
+	float set_l_torque = L_MOTOR_SET_TORQUE;
+
+	//フィードバック値(トルクセンサなど)
+	float feedback_r_torque = 0.0;
+	float feedback_l_torque = 0.0;
+
+	//制御量（モータ印加電圧値、PWM値）
+	float output_r_pwm = 0.0;
+	float output_l_pwm = 0.0;
+
 
 	//PID制御構造体初期化
-	InitPid(&pid_samples);
+	InitPid(&r_torque_pid);
+	InitPid(&l_torque_pid);
 
-	//PIDパラメータ設定
-	Set_pid_gain(&pid_samples, PGAIN, TI, TD);
-	Set_pid_dt(&pid_samples, DT);
-	Set_pid_dff(&pid_samples, DFF);
-	Set_pid_outlim(&pid_samples, OUTMAX, OUTMIN);
-	Set_pid_deltaoutlim(&pid_samples, DELTA_OUTMAX, DELTA_OUTMIN);
+	//PIDパラメータ設定(右モータ)
+	SetPidGain(&r_torque_pid, PGAIN, TI, TD);
+	SetPidDt(&r_torque_pid, DT);
+	SetPidDff(&r_torque_pid, DFF);
+	SetPidOutlim(&r_torque_pid, OUTMAX, OUTMIN);
+	SetPidDeltaoutlim(&r_torque_pid, DELTA_OUTMAX, DELTA_OUTMIN);
+
+	//PIDパラメータ設定(左モータ)
+	SetPidGain(&l_torque_pid, PGAIN, TI, TD);
+	SetPidDt(&l_torque_pid, DT);
+	SetPidDff(&l_torque_pid, DFF);
+	SetPidOutlim(&l_torque_pid, OUTMAX, OUTMIN);
+	SetPidDeltaoutlim(&l_torque_pid, DELTA_OUTMAX, DELTA_OUTMIN);
 
 	while(1){
 		if(timer_flag == true){
 			timer_flag = false;
 
-			//フィードバック値を取得
-			feedback_value = GetSensorValue();
+			//フィードバック値(トルク値)を取得
+			feedback_r_torque = GetRightTorqueSensor();
+			feedback_l_torque = GetLeftTorqueSensor();
+
 			//PID制御演算
-			output_value = VResPID(&pid_samples, set_value, feedback_value);
-			//アクチュエータ出力を設定
-			SetActuatorValue(output_value);
+			output_r_pwm = VResPID(&r_torque_pid, set_r_torque, feedback_r_torque);
+			output_l_pwm = VResPID(&l_torque_pid, set_l_torque, feedback_l_torque);
+			
+			//モータ印加電圧（PWM）を設定
+			SetRightMotorTorque(output_r_pwm);
+			SetLeftMotorTorque(output_l_pwm);
 		}
 	}	
 	return (0);
-}
-
-float GetSensorValue(void){
-	//センサなどのフィードバック値を取得します。
-	return(0.0);
-}
-
-
-void SetActuatorValue(float output_value){
-	//アクチュエータの出力値を設定します。
-}
-
-void TimerHandler(void){
-	//制御周期DTの周期ハンドラを想定します。
-	timer_flag = true;
 }

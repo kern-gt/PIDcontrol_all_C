@@ -44,7 +44,7 @@ pid_sample.c
 
 
 //PIDパラメータ型変数を定義
-PID_STATE_t pid_samples = newPID_state_init();
+PIDParameter_t pid_samples;
 
 //むだ時間バッファ
 float delay_fifo[(1024 * 100)];
@@ -52,98 +52,100 @@ float delay_fifo_step[(1024 * 100)];
 
 
 //1次遅れフィルタ関数プロトタイプ
-float rk4(float indata, float tau, float dt,float gain);
-float rk4_step(float indata, float tau, float dt,float gain);
-float delaytime(float *buf,float input,float puredelay,float dt);
-float delaytime_step(float *buf,float input,float puredelay,float dt);
-float lagged_derivative(float indata, float td, float dff, float dt);
+float Rk4(float indata, float tau, float dt,float gain);
+float Rk4Step(float indata, float tau, float dt,float gain);
+float DelayTime(float *buf,float input,float puredelay,float dt);
+float DelayTimeStep(float *buf,float input,float puredelay,float dt);
+float LaggedDerivative(float indata, float td, float dff, float dt);
 
 
 
 int main(void) {
 	int hogea = STEP,i;
 	float hogeb = DT,
-			hogec = STARTVAL,
-			hoged = 0.0,
-			hogee = 0.0,
-			hogef = 0.0,
-			hogeg = TAU,
-			hogeh = RK4_GAIN,
-			hogei = PURE_DELAY,
-			lagdiff = 0.0;
+		hogec = STARTVAL,
+		hoged = 0.0,
+		hogee = 0.0,
+		hogef = 0.0,
+		hogeg = TAU,
+		hogeh = RK4_GAIN,
+		hogei = PURE_DELAY,
+		lagdiff = 0.0;
 	float readPgain = 0.0,
-			readTigain = 0.0,
-			readTdgain = 0.0;
+		readTigain = 0.0,
+		readTdgain = 0.0;
 
+	//PID制御構造体初期化
+	InitPid(&pid_samples);
 
-		//PIDパラメータ設定
-		Set_pid_gain(&pid_samples, PGAIN, TI, TD);
-		Set_pid_dt(&pid_samples, DT);
-		Set_pid_dff(&pid_samples, DFF);
-		Set_pid_outlim(&pid_samples, OUTMAX, OUTMIN);
-		Set_pid_deltaoutlim(&pid_samples, DELTA_OUTMAX, DELTA_OUTMIN);
+	//PIDパラメータ設定
+	SetPidGain(&pid_samples, PGAIN, TI, TD);
+	SetPidDt(&pid_samples, DT);
+	SetPidDff(&pid_samples, DFF);
+	SetPidOutlim(&pid_samples, OUTMAX, OUTMIN);
+	SetPidDeltaoutlim(&pid_samples, DELTA_OUTMAX, DELTA_OUTMIN);
 
-		//PIDパラメータ読み出し
-		Read_vpidgain(&pid_samples,&readPgain,&readTigain,&readTdgain);
-		hoged = readPgain;
-		hogee = readTigain;
-		hogef = readTdgain;
+	//PIDパラメータ読み出し
+	GetPidGain(&pid_samples,&readPgain,&readTigain,&readTdgain);
+	hoged = readPgain;
+	hogee = readTigain;
+	hogef = readTdgain;
 
-		//csv処理(グラフタイトル)
-		printf("Step,");
-		printf("setvalue,");
-		printf("pid_output,");
-		printf("feedback,");
-		printf("step-resp,");
-		printf("lagdiff_velo,");
-		printf("lagdiff,");
-		printf(",");
-		printf("Step=%d,dt=%f[s],rk4start=%f," ,hogea,hogeb,hogec);
-		printf("Pgain=%f,Ti=%f,Td*PureTdgain=%f,Tau=%f[s],rk4gain=%f,Puredelay=%f[s]",
-				hoged,hogee,hogef,hogeg,hogeh,hogei);
-		printf("\n");
+	//csv処理(グラフタイトル)
+	printf("Step,");
+	printf("setvalue,");
+	printf("pid_output,");
+	printf("feedback,");
+	printf("step-resp,");
+	printf("lagdiff_velo,");
+	printf("lagdiff,");
+	printf(",");
+	printf("Step=%d,dt=%f[s],Rk4start=%f," ,hogea,hogeb,hogec);
+	printf("Pgain=%f,Ti=%f,Td*PureTdgain=%f,Tau=%f[s],Rk4gain=%f,Puredelay=%f[s]",
+			hoged,hogee,hogef,hogeg,hogeh,hogei);
+	printf("\n");
 
-		//制御ループ計算
-		for ( i = 0; i < STEP; ++i)
-		{
-			static float feedback = STARTVAL;
-			float setvalue = SETVAL ,pid_output = 0.0,delay_output = 0.0,time = 0.0;
-			static float no_ctrl_rk4 = STARTVAL;
+	//制御ループ計算
+	for ( i = 0; i < STEP; ++i)
+	{
+		static float feedback = STARTVAL;
+		float setvalue = SETVAL ,pid_output = 0.0,delay_output = 0.0,time = 0.0;
+		static float no_ctrl_Rk4 = STARTVAL;
 
-		/*シミュレーション１　1次遅れ＋むだ時間系のPID制御(ステップ入力)------------------------*/
-			//PID演算
-			pid_output = Velocitytype_i_pd(&pid_samples,setvalue, feedback);
+	/*シミュレーション１　1次遅れ＋むだ時間系のPID制御(ステップ入力)------------------------*/
+		//PID演算
+		pid_output = VResI_PD(&pid_samples,setvalue, feedback);
 
-			//むだ時間シミュレーション
-			delay_output = delaytime(delay_fifo,pid_output,PURE_DELAY,DT);
+		//むだ時間シミュレーション
+		delay_output = DelayTime(delay_fifo,pid_output,PURE_DELAY,DT);
 
-			//1次遅れシミュレーション(４次ルンゲクッタ)
-			feedback = rk4(delay_output, TAU, DT,RK4_GAIN);
+		//1次遅れシミュレーション(４次ルンゲクッタ)
+		feedback = Rk4(delay_output, TAU, DT,RK4_GAIN);
 
-		/*シミュレーション２　1次遅れ＋むだ時間系のステップ応答（PID制御無し）---------------------*/
-			//ステップ応答用
-			no_ctrl_rk4 = delaytime_step(delay_fifo_step,SETVAL,PURE_DELAY,DT);
-			no_ctrl_rk4 = rk4_step(no_ctrl_rk4,TAU,DT,RK4_GAIN);
+	/*シミュレーション２　1次遅れ＋むだ時間系のステップ応答（PID制御無し）---------------------*/
+		//ステップ応答用
+		no_ctrl_Rk4 = DelayTimeStep(delay_fifo_step,SETVAL,PURE_DELAY,DT);
+		no_ctrl_Rk4 = Rk4Step(no_ctrl_Rk4,TAU,DT,RK4_GAIN);
 
-		/*シミュレーション１・２のCSV出力処理---------------------------------------------*/
-			time = (float)i * DT;
+	/*シミュレーション１・２のCSV出力処理---------------------------------------------*/
+		time = (float)i * DT;
 
-			printf("%f", time);			printf(",");
-			printf("%f", setvalue);		printf(",");
-			printf("%f", pid_output);	printf(",");
-			printf("%f", feedback);		printf(",");
-			printf("%f", no_ctrl_rk4);	printf(",");
+		printf("%f", time);			printf(",");
+		printf("%f", setvalue);		printf(",");
+		printf("%f", pid_output);	printf(",");
+		printf("%f", feedback);		printf(",");
+		printf("%f", no_ctrl_Rk4);	printf(",");
 
-		/*シミュレーション３　PID制御の不完全微分のみシミュレーション（ステップ入力）------------------*/
-			//不完全微分ステップ応答用
-			lagdiff = lagged_derivative(SETVAL,TD,DFF,DT);
-			printf("%f", lagdiff);		printf("\n");
-		}
+	/*シミュレーション３　PID制御の不完全微分のみシミュレーション（ステップ入力）------------------*/
+		//不完全微分ステップ応答用
+		lagdiff = LaggedDerivative(SETVAL,TD,DFF,DT);
+		printf("%f", lagdiff);		printf("\n");
+	}
 	return (0);
 }
 
 //不完全微分
-float lagged_derivative(float indata, float td, float dff, float dt)
+float LaggedDerivative(float indata, float td, float dff, float dt)
 {
 	static float velocity_d = 0.0, data_d = 0.0;
 	static float error[3] = {0.0, 0.0, 0.0};
@@ -168,7 +170,7 @@ float lagged_derivative(float indata, float td, float dff, float dt)
 
 
 //むだ時間バッファ(リングバッファ方式のFIFO)
-float delaytime(float *buf,float input,float puredelay,float dt)
+float DelayTime(float *buf,float input,float puredelay,float dt)
 {
 	float output = 0.0,bufsize = 0.0;
 	static int inputpoint = 0, outputpoint = 1;
@@ -204,7 +206,7 @@ float delaytime(float *buf,float input,float puredelay,float dt)
 
 
 //ステップ応答用むだ時間バッファ（リングバッファによるFIFO）
-float delaytime_step(float *buf,float input,float puredelay,float dt)
+float DelayTimeStep(float *buf,float input,float puredelay,float dt)
 {
 	float output = 0.0,bufsize = 0.0;
 	static int inputpoint = 0, outputpoint = 1;
@@ -241,7 +243,7 @@ float delaytime_step(float *buf,float input,float puredelay,float dt)
 
 
 //1次遅れフィルタ（４次ルンゲクッタ法）
-float rk4(float indata, float tau, float dt,float gain)
+float Rk4(float indata, float tau, float dt,float gain)
 {
 	float k1 = 0.0, k2 = 0.0, k3 = 0.0, k4 = 0.0;
 	static float outdata = 0.0;
@@ -258,7 +260,7 @@ float rk4(float indata, float tau, float dt,float gain)
 
 //
 //1次遅れフィルタ ステップ応答用
-float rk4_step(float indata, float tau, float dt,float gain)
+float Rk4Step(float indata, float tau, float dt,float gain)
 {
 	float k1 = 0.0, k2 = 0.0, k3 = 0.0, k4 = 0.0;
 	static float outdata = 0.0;

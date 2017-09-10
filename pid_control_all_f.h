@@ -25,7 +25,7 @@ pid_control_all.h
 	pgain	= 1.0;			//比例ゲイン
 	ti		= 0.1;			//積分時間
 	td　		= 0.1;			//微分時間
-	dff　	= 0.1;			//実用微分係数(0.1~0.125)
+	dff　	= 0.1;			//不完全微分の微分係数(0.1~0.125)
 	dt　		= 1.0;			//制御周期　内部は(秒)
 
 	outmax 	=  100.0;		//操作量最大値
@@ -67,7 +67,7 @@ typedef struct
 	float velocity_d;			//速度D項出力
 	float pidout[3];			//位置PID項出力
 	float limited_pidout[2];	//制限済み位置PID出力
-	float switch_i_flag;		//リミッタ動作時に速度I項を無視する
+	float switch_i_flag;		//積分器ワインドアップフラグ
 
 }PIDParameter_t;
 
