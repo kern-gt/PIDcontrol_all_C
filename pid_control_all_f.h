@@ -2,7 +2,7 @@
 PID制御ヘッダ　ver2.xx
 pid_control_all.h
 
-機能：パラメータ設定/読出し、偏差PID,微分先行形P-ID、比例微分先行形I-PD
+機能：パラメータ設定/取得、偏差PID,微分先行形P-ID、比例微分先行形I-PD
 	全てfloat型変数を使用
 
 作成日：2015/08
@@ -20,25 +20,24 @@ pid_control_all.h
 <<外部公開マクロ定義>>
 ------------------------------------------------------------------------------**/
 
-//PIDパラメータ初期化
-#define newPID_state_init() {1.0, 0.1, 0.1, 0.1, 0.1, 100.0, -100.0, 1.0, -1.0,{0.0, 0.0, 0.0},{0.0, 0.0, 0.0},0.0,{0.0, 0.0, 0.0},{0.0, 0.0},0.0};
+//PID制御構造体初期化
 /*初期化パラメータ------------------------------------------------------------
 	pgain	= 1.0;			//比例ゲイン
 	ti		= 0.1;			//積分時間
 	td　		= 0.1;			//微分時間
 	dff　	= 0.1;			//実用微分係数(0.1~0.125)
-	dt　		= 0.1;			//制御周期　内部は(秒)
+	dt　		= 1.0;			//制御周期　内部は(秒)
 
 	outmax 	=  100.0;		//操作量最大値
 	outmin 	= -100.0;		//操作量最小値
 	delta_outmax =  1.0;	//操作変化量最大値
 	delta_outmin = -1.0;	//操作変化量最小値
 
-	error[3] 			= {0.0,0.0,0.0};	//偏差バッファ
-	inputbuf[3] 		= {0.0,0.0,0.0};	//入力バッファ
+	error[3] 			= すべて0.0;	//偏差バッファ
+	inputbuf[3] 		= すべて0.0;	//入力バッファ
 	velocity_d 			= 0.0;				//速度D項出力
-	pidout[3] 			= {0.0,0.0,0.0};	//位置PID項出力
- 	limited_pidout[2]	= {0.0,0.0};		//制限済み位置PID出力
+	pidout[3] 			= すべて0.0;	//位置PID項出力
+ 	limited_pidout[2]	= すべて0.0;		//制限済み位置PID出力
 	switch_i_flag 		= 0.0;				//リミッタ動作時に速度I項を無視する
 -----------------------------------------------------------------------*/
 
@@ -46,7 +45,7 @@ pid_control_all.h
 <<外部公開型定義>>
 -----------------------------------------------------------------------------**/
 
-//PIDパラメータ型　システム変数
+//PID制御構造体型
 typedef struct
 {
 	//制御パラメータ
@@ -70,77 +69,81 @@ typedef struct
 	float limited_pidout[2];	//制限済み位置PID出力
 	float switch_i_flag;		//リミッタ動作時に速度I項を無視する
 
-} PID_STATE_t ;
+}PIDParameter_t;
 
 
 /**-----------------------------------------------------------------------------
 <<外部公開プロトタイプ定義>>
 ------------------------------------------------------------------------------**/
-/*パラメータ設定-----------------------------------------------------------*/
-//制御周期設定関数　引数は(秒)
-void Set_pid_dt(PID_STATE_t *pid_state_p,			//PIDパラメータ
+/**変数初期化--------------------------------------------------------------------**/
+/*PID制御構造体初期化関数*/
+extern void InitPid(PIDParameter_t *pid_state_p);	//PID制御構造体
+
+/**パラメータ設定-------------------------------------------------------------------**/
+/*制御周期設定関数　引数は(秒)*/
+extern void SetPidDt(PIDParameter_t *pid_state_p,			//PID制御構造体
 								float dt);			//制御周期
 
-//微分係数設定関数(0.1~0.125))
-void Set_pid_dff(PID_STATE_t *pid_state_p,			//PIDパラメータ
+/*微分係数設定関数(0.1~0.125))*/
+extern void SetPidDff(PIDParameter_t *pid_state _p,			//PID制御構造体
 								float dff);			//微分係数
 
-///pidゲイン設定関数
-void Set_pid_gain(PID_STATE_t *pid_state_p,			//PIDパラメータ
+/*pidゲイン設定関数*/
+extern void SetPidGain(PIDParameter_t *pid_state_p,			//PID制御構造体
 				  				float pgain,		//比例ゲイン
 				  				float ti,			//積分時間
 				  				float td);			//微分時間
 
-//操作量限界値設定関数
-void Set_pid_outlim(PID_STATE_t *pid_state_p,		//PIDパラメータ型
+/*操作量限界値設定関数*/
+extern void SetPidOutlim(PIDParameter_t *pid_state_p,		//PID制御構造体型
 								float outmax,		//操作量上限値
 								float outmin);		//操作量下限値
 
-//操作変化量限界値設定関数
-void Set_pid_deltaoutlim(PID_STATE_t *pid_state_p,	//PIDパラメータ
+/*操作変化量限界値設定関数*/
+extern void SetPidDeltaoutlim(PIDParameter_t *pid_state_p,	//PID制御構造体
 					 		float delta_outmax,		//操作増加量限界値
 					 		float delta_outmin);	//操作減少量限界値
 
-/*パラメータ読出し----------------------------------------------------------*/
-//制御周期読出し関数　戻り値は(秒)
-void Read_pid_dt(PID_STATE_t *pid_state_p,			//PIDパラメータ
+/**パラメータ取得------------------------------------------------------------------**/
+/*制御周期取得関数　戻り値は(秒)*/
+extern void GetPidDt(PIDParameter_t *pid_state_p,			//PID制御構造体
 								float *dt);			//制御周期
 
-//微分係数読出し関数
-void Read_pid_dff(PID_STATE_t *pid_state_p,			//PIDパラメータ
+/*/微分係数取得関数*/
+extern void GetPidDff(PIDParameter_t *pid_state_p,			//PID制御構造体
 								float *dff);		//微分係数
 
-//pidゲイン読み出し関数
-void Read_pid_gain(PID_STATE_t *pid_state_p,		//PIDパラメータ
+/*pidゲイン読み出し関数*/
+extern void GetPidGain(PIDParameter_t *pid_state_p,		//PID制御構造体
 				  				float *pgain,		//比例ゲイン
 				  				float *ti,			//積分時間
 				  				float *td);			//微分時間
 
-//操作量限界値読出し関数
-void Read_pid_outlim(PID_STATE_t *pid_state_p,		//PIDパラメータ
+/*操作量限界値取得関数*/
+extern void GetPidOutlim(PIDParameter_t *pid_state_p,		//PID制御構造体
 								float *outmax,		//操作量最大値
 								float *outmin);		//操作量最小値
 
-//操作変化量限界値読出し関数
-void Read_pid_deltaoutlim(PID_STATE_t *pid_state_p,	//PIDパラメータ
+/*操作変化量限界値取得関数*/
+extern void GetPidDeltaoutlim(PIDParameter_t *pid_state_p,	//PID制御構造体
 					  		float *delta_outmax,	//操作変化量最大値
 					  		float *delta_outmin);	//操作変化量最小値
 
-/*PID制御関数-----------------------------------------------------------*/
-//実用偏差速度形ディジタルPID
-float Velocitytype_pid(PID_STATE_t *pid_state_p,	//PIDパラメータ
-					   			float setval,		//目標値
-					   			float inputval);	//制御入力値
+/**PID制御関数-------------------------------------------------------------------**/
+/*実用偏差速度形ディジタルPID*/
+extern float VResPID(PIDParameter_t *pid_state_p,	//PID制御構造体
+					   			float setvalue,		//目標値
+					   			float feedback_value);	//制御入力値
 
-//実用微分先行速度形ディジタルPID
-float Velocitytype_p_id(PID_STATE_t *pid_state_p,	//PIDパラメータ
-					   	   		float setval,		//目標値
-					   	   		float inputval);	//制御入力
+/*実用微分先行速度形ディジタルPID*/
+extern float VResPI_D(PIDParameter_t *pid_state_p,	//PID制御構造体
+					   	   		float setvalue,		//目標値
+					   	   		float feedback_value);	//制御入力
 
-//実用比例微分先行速度形ディジタルPID
-float Velocitytype_i_pd(PID_STATE_t *pid_state_p,	//PIDパラメータ
-					   			float setval,		//目標値
-								float inputval);	//制御入力
+/*実用比例微分先行速度形ディジタルPID*/
+extern float VResI_PD(PIDParameter_t *pid_state_p,	//PID制御構造体
+					   			float setvalue,		//目標値
+								float feedback_value);	//制御入力
 
 
-#endif //_GTS02_PID_CONTROL_F_H_
+#endif /*_GTS02_PID_CONTROL_F_H_*/
