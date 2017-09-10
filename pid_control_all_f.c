@@ -105,7 +105,6 @@ pid_control_all.c
 ＊　戻り値　：
 ＊　備考　　：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~**/
-
 void InitPid(PIDParameter_t *pid_state_p)
 {
 	(*pid_state_p).pgain = 1.0;
@@ -305,7 +304,8 @@ float VResPID(PIDParameter_t *pid_state_p, float setvalue, float feedback_value)
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * ((*pid_state_p).error[0] - 2*(*pid_state_p).error[1] +(*pid_state_p).error[2]))
-					+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+		+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//偏差をバッファに保存
@@ -384,7 +384,8 @@ float VResPI_D(PIDParameter_t *pid_state_p,　float setvalue,	float feedback_val
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * (2*(*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0] - (*pid_state_p).inputbuf[2])) 
-								+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+		+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//偏差・入力をバッファに保存
@@ -465,7 +466,8 @@ float VResI_PD(PIDParameter_t *pid_state_p,　float setvalue,	float feedback_val
 
 	//速度微分演算
 	(*pid_state_p).velocity_d = ((*pid_state_p).td * (2*(*pid_state_p).inputbuf[1] - (*pid_state_p).inputbuf[0] - (*pid_state_p).inputbuf[2])) 
-								+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+	+ ((*pid_state_p).td * (*pid_state_p).dff * (*pid_state_p).velocity_d);
+	
 	(*pid_state_p).velocity_d = (*pid_state_p).velocity_d / ((*pid_state_p).dt + (*pid_state_p).dff * (*pid_state_p).td);
 
 	//入力をバッファに保存
