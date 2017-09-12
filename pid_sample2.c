@@ -66,19 +66,23 @@ float GetLeftTorqueSensor(void){
 	return(0.0);
 }
 
-void SetRightMotorTorque(float output_r_pwm){
+void SetRightMotorVoltage(float volt){
 	/*
 	右モータの印加電圧を設定します。
-	今回の例では引数はPWM値（100.0~-100.0%）を
+	今回の例では引数は電圧を
 	想定しています。
+	最終的にPWM制御するならば
+	デューティー比に変換してください。
 	*/
 }
 
-void SetLeftMotorTorque(float output_l_pwm){
+void SetLeftMotorVoltage(float volt){
 	/*
 	左モータの印加電圧を設定します。
-	今回の例では引数はPWM値（100.0~-100.0%）を
+	今回の例では引数は電圧を
 	想定しています。
+	最終的にPWM制御するならば
+	デューティー比に変換してください。
 	*/
 }
 
@@ -98,9 +102,9 @@ int main(void) {
 	float feedback_r_torque = 0.0;
 	float feedback_l_torque = 0.0;
 
-	//制御量（モータ印加電圧値、PWM値）
-	float output_r_pwm = 0.0;
-	float output_l_pwm = 0.0;
+	//制御量（モータ印加電圧値）
+	float output_r_volt = 0.0;
+	float output_l_volt = 0.0;
 
 
 	//PID制御構造体初期化
@@ -130,12 +134,12 @@ int main(void) {
 			feedback_l_torque = GetLeftTorqueSensor();
 
 			//PID制御演算
-			output_r_pwm = VResPID(&r_torque_pid, set_r_torque, feedback_r_torque);
-			output_l_pwm = VResPID(&l_torque_pid, set_l_torque, feedback_l_torque);
+			output_r_volt = VResPID(&r_torque_pid, set_r_torque, feedback_r_torque);
+			output_l_volt = VResPID(&l_torque_pid, set_l_torque, feedback_l_torque);
 			
 			//モータ印加電圧（PWM）を設定
-			SetRightMotorTorque(output_r_pwm);
-			SetLeftMotorTorque(output_l_pwm);
+			SetRightMotorVoltage(output_r_volt);
+			SetLeftMotorVoltage(output_l_volt);
 		}
 	}	
 	return (0);

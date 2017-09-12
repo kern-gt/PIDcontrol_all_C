@@ -22,10 +22,10 @@ pid_sample2.c
 #include "pid_control_all_f.h"  //PIDライブラリをインクルード
 
 //サンプリング数[s/dt]
-#define SAMPLE_NUM (10 / DT)
+#define SAMPLE_NUM (int)(10 / DT)
 
 //モータトルク設定値
-#define SET_VALUE		(50.0)		//目標値
+#define SET_VALUE	(50.0)		//目標値
 
 //PID設定パラメータ
 #define PGAIN 		(1.0)		//比例ゲイン
@@ -117,6 +117,7 @@ float Plant(float control_value){
 
 //グラフ描画初期化
 void InitGraph(void){
+
 	
 }
 
@@ -125,8 +126,14 @@ void DrawGraph(&pid_struct, set_value, feedback_value,control_value){
 
 }
 
+//グラフ描画終了
+void EndGraph(void){
+	fclose(fp);
+}
 
 int main(void) {
+
+	FILE *fp;
 
 	//目標値
 	float set_value = SET_VALUE;
@@ -148,6 +155,15 @@ int main(void) {
 	SetPidOutlim(&pid_struct, OUTMAX, OUTMIN);
 	SetPidDeltaoutlim(&pid_struct, DELTA_OUTMAX, DELTA_OUTMIN);
 
+	//ファイル作成
+	if ((fp = fopen("graph.csv", "w")) == NULL) {
+		printf("file open error!!\n");
+		exit(1);
+	}
+
+	//グラフ出力初期化
+	InitGraph();
+
 	for(i=1;i >= SAMPLE_NUM;i++){
 
 		//PID制御演算
@@ -158,6 +174,7 @@ int main(void) {
 
 		//グラフ描画
 		DrawGraph(&pid_struct, set_value, feedback_value,control_value);
-	}	
+	}
+	fclose(fp);
 	return (0);
 }
