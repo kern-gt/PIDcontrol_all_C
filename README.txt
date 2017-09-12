@@ -1,6 +1,6 @@
 このソースコードの文字エンコードはUTF-8です。
 
-Ver1.00 Alpha版
+Ver1.01 Alpha版
 
 PID制御関数ライブラリの使い方	
 作成日2016/2/10
@@ -8,6 +8,15 @@ PID制御関数ライブラリの使い方
 ＊このPID制御ライブラリについて＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊
 
 注：変数は単精度(float)です。
+
+ライブラリ本体
+	pid_control_all_f.h
+	pid_control_all_f.c
+
+サンプルコード
+	pid_sample.c
+	pid_sample2.c
+	pid_sample2_test.c
 
 3種類のPID制御関数を定義しています。
 	・PID制御
