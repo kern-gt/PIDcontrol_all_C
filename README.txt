@@ -9,6 +9,15 @@ PID制御関数ライブラリの使い方
 
 注：変数は単精度(float)です。
 
+ライブラリ本体
+	pid_control_all_f.h
+	pid_control_all_f.c
+
+サンプルコード
+	pid_sample.c
+	pid_sample2.c
+	pid_sample2_test.c
+
 3種類のPID制御関数を定義しています。
 	・PID制御
 	・微分先行形PID制御
